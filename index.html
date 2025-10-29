@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gantry Traffic Dashbaord</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" /> 
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="logo-dot"></div>
+      <span>Gantry Traffic Dashbaord</span>
+    </div>
+    <div class="header-actions">
+      <label class="file-label">
+        <input id="fileInput" type="file" accept=".csv,text/csv,.tsv,text/tab-separated-values" />
+        Import CSV
+      </label>
+      <a class="ghost-btn" href="gantry_template.csv" download>Download template</a>
+      <button id="saveLocal" class="ghost-btn">Save to browser</button>
+      <button id="clearLocal" class="ghost-btn">Clear saved</button>
+    </div>
+  </header>
+
+  <!-- Top Nav Tabs -->
+  <nav class="top-tabs">
+    <button class="tab active" data-tab="summary">Summary</button>
+    <button class="tab" data-tab="compare">Compare</button>
+  </nav>
+
+  <main class="container">
+    <section class="panel info-panel">
+      <div class="hint">
+        Drag a CSV anywhere in the page or use Import.
+      </div>
+      <div class="status-row">
+        <span>Data source:</span> <code id="dataSource">embedded sample</code>
+      </div>
+      <div id="errorBox" class="error-box" style="display:none"></div>
+      <div class="toggles">
+        <label><input type="checkbox" id="toggleRolling"> 7-day rolling avg</label>
+        <label><input type="checkbox" id="toggleCumulative"> Cumulative</label>
+        <label><input type="checkbox" id="toggleBaseline"> Compare “Selected vs All”</label>
+      </div>
+    </section>
+
+    <section id="dropZone" class="panel dropzone">
+      <strong>Drop CSV here</strong>
+      <div id="importDiag" class="diag"></div>
+      <div id="previewWrap" class="preview" style="display:none">
+        <div class="panel-header"><h3>Preview (first 10 rows)</h3></div>
+        <table id="previewTable"></table>
+      </div>
+    </section>
+
+    <!-- SUMMARY VIEW -->
+    <div id="summaryView">
+      <section class="panel layout">
+        <div class="left-col">
+          <section class="panel filters">
+            <div class="panel-header">
+              <h2>Filters</h2>
+              <button id="resetFilters" class="ghost-btn">Reset</button>
+            </div>
+            <div class="filters-grid">
+              <div class="field"><label>Gantry</label><select id="gantrySelect" multiple></select></div>
+              <div class="field"><label>Filter1</label><select id="filter1Select" multiple></select></div>
+              <div class="field"><label>Filter2</label><select id="filter2Select" multiple></select></div>
+              <div class="field"><label>Filter3</label><select id="filter3Select" multiple></select></div>
+              <div class="field"><label>Date From</label><input id="dateFrom" type="date" /></div>
+              <div class="field"><label>Date To</label><input id="dateTo" type="date" /></div>
+              <div class="field"><label>Time Grain</label>
+                <select id="timeGrain">
+                  <option value="auto" selected>Auto</option><option value="day">Day</option><option value="month">Month</option>
+                </select>
+              </div> 
+            </div>
+          </section>
+
+          <section class="kpis">
+            <div class="kpi-card"><div class="kpi-label">Total Traffic</div><div class="kpi-value" id="kpiTotal">–</div></div>
+            <div class="kpi-card"><div class="kpi-label">Gantry Count</div><div class="kpi-value" id="kpiGantryCount">–</div></div>
+            <div class="kpi-card"><div class="kpi-label">Avg / Gantry</div><div class="kpi-value" id="kpiAvg">–</div></div>
+          </section>
+
+          <!-- Summary statistics (no comparison) -->
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Summary Statistics (filtered)</h2>
+            </div>
+            <div class="kpis" style="margin-top:0">
+              <div class="kpi-card"><div class="kpi-label">Min Transactions (row)</div><div class="kpi-value" id="sumMin">–</div></div>
+              <div class="kpi-card"><div class="kpi-label">Max Transactions (row)</div><div class="kpi-value" id="sumMax">–</div></div>
+              <div class="kpi-card"><div class="kpi-label">Average Transactions (row)</div><div class="kpi-value" id="sumAvg">–</div></div>
+            </div>
+
+            <div class="filters-grid three-col gap-12" style="margin-top:12px">
+              <div class="panel table-panel">
+                <div class="panel-header"><h2 style="font-size:16px">Avg by Filter1</h2></div>
+                <div class="preview"><table id="avgByF1Table" class="dataTable"></table></div>
+              </div>
+              <div class="panel table-panel">
+                <div class="panel-header"><h2 style="font-size:16px">Avg by Filter2</h2></div>
+                <div class="preview"><table id="avgByF2Table" class="dataTable"></table></div>
+              </div>
+              <div class="panel table-panel">
+                <div class="panel-header"><h2 style="font-size:16px">Avg by Filter3</h2></div>
+                <div class="preview"><table id="avgByF3Table" class="dataTable"></table></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel fixed-height">
+            <div class="panel-header"><h2>Trend (compare gantries)</h2></div>
+            <canvas id="trendCanvas"></canvas>
+          </section>
+
+          <section class="panel fixed-height">
+            <div class="panel-header"><h2>Top Gantries (latest period)</h2></div>
+            <canvas id="barCanvas"></canvas>
+          </section>
+          <section class="panel fixed-height">
+            <div class="panel-header">
+              <h2>Top 10 Days — Max Transactions</h2>
+              <div class="field" style="min-width: 220px;">
+                <label>Focus Gantry (optional)</label>
+                <select id="rankGantrySelect"></select>
+              </div>
+            </div>
+            <canvas id="rankCanvas" class="h-260"></canvas>
+            <div id="rankList" class="diag" style="max-height: 160px; overflow:auto; margin-top:8px;"></div>
+          </section>
+        </div>
+
+        <div class="right-col">
+          <section class="panel map-panel fixed-height">
+            <div class="panel-header">
+              <h2>Map</h2>
+              <div class="legend-inline"><span class="dot gantry"></span><span class="legend-text">Gantry</span></div>
+            </div>
+            <div id="map"></div>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <!-- COMPARE VIEW -->
+    <div id="compareView" class="hidden">
+      <section class="panel compare-panel fixed-height">
+        <div class="panel-header">
+          <h2>Compare (secondary selection)</h2>
+        </div>
+      
+        <div class="filters-grid three-col gap-12">
+          <div class="field">
+            <label>Gantry (compare)</label>
+            <select id="gantryCompareSelect" multiple></select>
+          </div>
+          <div class="field">
+            <label>Date From (compare)</label>
+            <input id="dateFrom2" type="date" />
+          </div>
+          <div class="field">
+            <label>Date To (compare)</label>
+            <input id="dateTo2" type="date" />
+          </div>
+      
+          <!-- helpers -->
+          <div class="field full-width" style="display:flex; align-items:center; gap:12px;">
+            <label style="margin:0; display:flex; align-items:center; gap:8px;">
+              <input id="compareLock" type="checkbox" />
+              Use same length as main (display only)
+            </label>
+            <button id="applyMatchLength" class="ghost-btn" type="button" title="Set Compare To so its length equals the main window">
+              Match length (set dates)
+            </button>
+            <small class="muted" id="compareLengthHint"></small>
+          </div>
+        </div>
+      
+        <canvas id="compareCanvas" class="h-240"></canvas>
+      
+        <!-- day-by-day table with delta (%) -->
+        <div class="panel" style="margin-top:12px;">
+          <div class="panel-header">
+            <h2 style="font-size:16px">Daily Comparison</h2>
+          </div>
+          <div class="preview" style="max-height:260px;">
+            <table id="compareTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Main Date</th>
+                  <th>Main Value</th>
+                  <th>Compare Date</th>
+                  <th>Compare Value</th>
+                  <th>Δ (%, vs Main)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <span>CSV headers (case/spacing flexible): <code>Date, Gantry, Filter1, Filter2, Filter3, TrafficVolume, Gantry-Lat, Gantry-Lon</code></span>
+  </footer>
+
+  <!-- Vendors from CDN (still no server needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script> 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+  
+  <script id="embeddedData" type="application/json">[
+    {"Date":"2019-01-01","Gantry":"WebbLynnRd","Filter1":"SH360","Filter2":"TotalTxns","Filter3":"New_Yr","TrafficVolume":33,"Gantry-Lat":32.646809,"Gantry-Lon":-97.062327},
+    {"Date":"2019-01-02","Gantry":"WebbLynnRd","Filter1":"SH360","Filter2":"TotalTxns","Filter3":"Wkday","TrafficVolume":45,"Gantry-Lat":32.646809,"Gantry-Lon":-97.062327}
+  ]</script>
+  <!-- App -->
+  <script src="app.js" defer></script>
+</body>
+</html>
